@@ -26,7 +26,7 @@ Exception和Error是对不同异常情况的分类.
 >
 > Error是在正常情况下,不太可能出现的情况,大部分Error都会导致程序出于非正常的不可恢复的状态.这种异常不需要也不方便捕获,常见的OutOfMemoryError,都是Error的子类.
 
-Exception又分为已检查和未检查异常,可检查必须显示捕获,这是编译器检查的一部分.未检查异常就是运行期异常,类似NullPointerException,ArrayIndexOutOfBoundsException,通常这类异常可以编码避免,具体根据需要来判断是否需要捕获,并不会在编译期强制要求.
+Exception又分为已检查和未检查异常,可检查必须显示捕获,这是编译器检查的一部分.未检查异常就是运行期异常,类似NullPointerException,ArrayIndexOutOfBoundsException,通常这类异常可以编码避免,具体根据需要来判断是否需要捕获,(并不会在编译期强制要求).
 
 ### 2.1 NoClassDefFoundError 和 ClassNotFoundException 有什么区别
 
@@ -394,3 +394,46 @@ Integer 是 int 对应的包装类，它有一个 int 类型的字段存储数�
 ### 1. 理解自动装箱、拆箱
 
 自动装箱实际上算是一种**语法糖**。什么是语法糖？可以简单理解为 Java 平台为我们自动进行了一些转换，保证不同的写法在运行时等价，它们发生在编译阶段，也就是生成的字节码是一致的。
+
+像前面提到的整数，javac 替我们自动把装箱转换为 Integer.valueOf()，把拆箱替换为 Integer.intValue(). 这里其实就用到了数字缓存的好处.
+
+这种缓存机制并不是只有 Integer 才有，同样存在于其他的一些包装类，比如：
+
+- Boolean，缓存了 true/false 对应实例，确切说，只会返回两个常量实例 Boolean.TRUE/FALSE。
+- Short，同样是缓存了 -128 到 127 之间的数值。
+- Byte，数值有限，所以全部都被缓存。
+- Character，缓存范围’\u0000’ 到 ‘\u007F’。
+
+**建议避免无意中的装箱、拆箱行为**，尤其是在性能敏感的场合，创建 10 万个 Java 对象和 10 万个整数的开销可不是一个数量级的，不管是内存使用还是处理速度，光是对象头的空间占用就已经是数量级的差距了。
+
+在性能要求非常高的场景,使用原始数据类型、数组甚至本地代码实现往往具有比较大的优势,用其替换掉包装类、动态数组（如 ArrayList）等可以作为性能优化的备选项
+
+首先，Integer 的缓存范围虽然默认是 -128 到 127，但是在特别的应用场景，比如我们明确知道应用会频繁使用更大的数值，这时候应该怎么办呢？
+
+缓存上限值实际是可以根据需要调整的，JVM 提供了参数设置：
+
+```java
+-XX:AutoBoxCacheMax=N
+```
+
+这些实现，都体现在[java.lang.Integer](http://hg.openjdk.java.net/jdk/jdk/file/26ac622a4cab/src/java.base/share/classes/java/lang/Integer.java)源码之中，并实现在 IntegerCache 的静态初始化块里。
+
+```java
+  private static class IntegerCache {
+        static final int low = -128;
+        static final int high;
+        static final Integer cache[];
+        static {
+            // high value may be configured by property
+            int h = 127;
+            String integerCacheHighPropValue =                			   
+                VM.getSavedProperty("java.lang.Integer.IntegerCache.high");
+            ...
+            // range [-128, 127] must be interned (JLS7 5.1.7)
+            assert IntegerCache.high >= 127;
+        }
+        ...
+  }
+```
+
+第二，我们在分析字符串的设计实现时，提到过字符串是不可变的，保证了基本的信息安全和并发编程中的线程安全。如果你去看包装类里存储数值的成员变量“value”，你会发现，不管是 Integer 还 Boolean 等，都被声明为“private final”，所以，它们同样是不可变类型！
